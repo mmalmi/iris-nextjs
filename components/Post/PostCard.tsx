@@ -1,9 +1,10 @@
 'use client';
 
+import { ArrowPathIcon, BoltIcon, HeartIcon } from '@heroicons/react/24/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Event, nip19 } from 'nostr-tools';
-import { MouseEventHandler, useCallback, useMemo, memo } from 'react';
+import { memo, MouseEventHandler, useCallback, useMemo } from 'react';
 
 import { usePostEvent, usePostReactions, useProfileContent } from '@/hooks';
 
@@ -20,18 +21,13 @@ import RelativeTime from '@/components/RelativeTime';
 import Spinner from '@/components/Spinner';
 import Dropdown from './Dropdown';
 import Reactions from './Reactions';
-import {
-  ArrowPathIcon,
-  BoltIcon,
-  HeartIcon,
-} from "@heroicons/react/24/solid";
 
-import {getZappingUser} from "@/utils/Lightning";
+import { getZappingUser } from '@/utils/Lightning';
 
 type Props = {
   postId: string;
   externalReactions?: Event[] | undefined;
-  showReplies?: number;
+  showReplies?: boolean;
   standalone?: boolean;
   asReply?: boolean;
   asRepliedMessage?: boolean;
@@ -66,6 +62,18 @@ const PostCard = ({
   }, [internalReactions, externalReactions]);
 
   let [mutedUsers] = useLocalState('muted', {});
+
+  const filteredReactions = useMemo(
+    () =>
+      sortedReactions.filter((event) => {
+        if (mutedUsers[event.pubkey]) return false;
+
+        if (event.kind !== 1 || isRepost(event)) return false;
+
+        return getReplyingToEvent(event) === postId;
+      }),
+    [sortedReactions, mutedUsers, postId]
+  );
 
   const { displayName, picture } = useProfileContent(postEvent?.pubkey || '');
   const npub = nip19.npubEncode(postEvent?.pubkey || '');
@@ -139,14 +147,17 @@ const PostCard = ({
       author = getZappingUser(postEvent);
       icon = <BoltIcon className="w-4 h-4 text-iris-orange" />;
     }
-    return(
+    return (
       <>
-        <span className={`text-sm text-neutral-500 flex items-center gap-2 px-4 -mb-2 mt-2`}>
+        <span
+          className={`text-sm text-neutral-500 flex items-center gap-2 px-4 -mb-2 mt-2`}
+        >
           {icon} <Name pub={author} /> {text}
         </span>
-        <PostCard postId={replyingToEvent} showReplies={0} />
+
+        <PostCard postId={replyingToEvent} showReplies={false} />
       </>
-    )
+    );
   }
 
   return (
@@ -171,7 +182,7 @@ const PostCard = ({
         <PostCard
           postId={replyingToEvent}
           asRepliedMessage={true}
-          showReplies={0}
+          showReplies={false}
         />
       ) : (
         ''
@@ -221,7 +232,7 @@ const PostCard = ({
             <Dropdown nip19NoteId={nip19NoteId} postEvent={postEvent} />
           </div>
 
-          {replyingToEvent && replyingToUsers && replyingToUsers.length ? (
+          {!!replyingToEvent && replyingToUsers && replyingToUsers.length && (
             <small className="opacity-50 flex items-center gap-1">
               Replying to
               {replyingToUsers.slice(0, 3).map((tag) => (
@@ -233,17 +244,13 @@ const PostCard = ({
                   <Name pub={tag[1]} />
                 </Link>
               ))}
-              {replyingToUsers.length > 3 ? (
+              {replyingToUsers.length > 3 && (
                 <span className="opacity-50">
                   {' '}
                   and {replyingToUsers.length - 3} more
                 </span>
-              ) : (
-                ''
               )}
             </small>
-          ) : (
-            ''
           )}
 
           <div className="flex flex-col gap-2 break-words">
@@ -254,41 +261,32 @@ const PostCard = ({
           </div>
         </div>
 
-        {!asInlineQuote ? (
+        {!asInlineQuote && (
           <Reactions
             standalone={standalone || false}
             event={postEvent}
             reactionEvents={sortedReactions}
             nip19NoteId={nip19NoteId}
           />
-        ) : (
-          ''
         )}
       </CardContainer>
-      {showReplyForm ? (
+
+      {showReplyForm && (
         <>
           <NewPostForm placeholder="Write your reply" replyingTo={postEvent} />
           <hr className="-mx-4 mt-2 opacity-10" />
         </>
-      ) : (
-        ''
       )}
-      {showReplies
-        ? sortedReactions
-            .filter((event) => {
-              if (mutedUsers[event.pubkey]) return false;
-              if (event.kind !== 1 || isRepost(event)) return false;
-              return getReplyingToEvent(event) === postId;
-            })
-            .map((event) => (
-              <PostCard
-                postId={event.id}
-                key={`${postId}reply${event.id}`}
-                showReplies={1}
-                asReply={true}
-              />
-            ))
-        : ''}
+
+      {showReplies &&
+        (filteredReactions || []).map((event) => (
+          <PostCard
+            postId={event.id}
+            key={`${postId}reply${event.id}`}
+            showReplies={true}
+            asReply={true}
+          />
+        ))}
     </>
   );
 };
